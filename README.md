@@ -18,5 +18,42 @@ The main goal of project is to build a backend application that, in addition to 
 ---
 
 
-## 🚀 How to Run the Project (Coming Soon)
-*Setup instructions will be added once the Docker containers are deployed.*
+## Run Locally
+
+Docker Compose starts PostgreSQL and the FastAPI backend. Development defaults are provided in `docker-compose.yml`; copy `.env.example` to `.env` to override the database credentials.
+
+```sh
+docker compose up --build
+```
+
+The API is available at `http://localhost:8000`. Interactive API documentation is at `http://localhost:8000/docs`.
+
+## API Endpoints
+
+| Method | Endpoint | Purpose |
+|---|---|---|
+| `GET` | `/healthz` | Check API and PostgreSQL connectivity |
+| `POST`, `GET` | `/users` | Create and list users |
+| `GET`, `PATCH`, `DELETE` | `/users/{user_id}` | Read, update, and delete a user |
+| `POST`, `GET` | `/tasks` | Create and list tasks; list supports `owner_id`, `offset`, and `limit` filters |
+| `GET`, `PATCH`, `DELETE` | `/tasks/{task_id}` | Read, update, and delete a task |
+
+Tasks may optionally be assigned to a user. Deleting an assigned user leaves the task in place and clears its owner.
+
+## Run API Tests
+
+The pytest API suite uses PostgreSQL and refuses to run unless `TEST_DATABASE_URL` points to a database whose name ends in `_test`. It clears the `users` and `tasks` tables between tests, so do not point it at your development database.
+
+Create a dedicated test database in the Compose PostgreSQL container once:
+
+```powershell
+docker compose exec dev-db createdb -U buggytasker buggytasker_test
+```
+
+Install the backend dependencies and run tests from the repository root. Update the connection string if you changed the Compose credentials:
+
+```powershell
+python -m pip install -r backend/requirments.txt
+$env:TEST_DATABASE_URL = "postgresql://buggytasker:buggytasker_dev_password@localhost:5432/buggytasker_test"
+python -m pytest backend/tests -v
+```
