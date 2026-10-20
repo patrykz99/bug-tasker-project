@@ -1,1 +1,7 @@
-python-dotenva 
+python-dotenv
+fastapi
+uvicorn[standard]
+sqlalchemy
+psycopg[binary]
+httpx
+pytest
