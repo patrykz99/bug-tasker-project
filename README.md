@@ -2,7 +2,7 @@
 
 Project is ceating to showcase modern techniques for API test automation, continerization (Docker), and CI/CD processes.
 
-The main goal of project is to build a backend application that, in addition to its standard operation, features a dedicated "Bug mode". It allows for the intentional simulation of performance regressions, authorization errors, and security vulnerabilities, which are then detected by automated E2E tests.
+The main goal of the project is to build a backend application with a dedicated "Bug Mode" for intentionally simulating regressions detected by automated tests. The currently implemented scenario adds database work and latency; authorization and security-vulnerability scenarios are not implemented yet.
 
 ---
 
@@ -40,6 +40,26 @@ The API is available at `http://localhost:8000`. Interactive API documentation i
 
 Tasks may optionally be assigned to a user. Deleting an assigned user leaves the task in place and clears its owner.
 
+## Bug Mode
+
+Bug Mode is an opt-in performance-regression simulation for requests that use the database, including health checks and the user and task endpoints. When enabled, each such request performs an additional `SELECT 1` on its existing database session and waits for 500 ms before continuing. This intentionally increases request latency without changing the API response or stored data. It is disabled by default.
+
+Configure the feature with these environment variables:
+
+| Variable | Default | Description |
+|---|---|---|
+| `ENABLE_BUG_MODE` | `false` | Enables the extra database query and 500 ms delay when set to `true` (case-insensitive). |
+| `BUG_MODE_LOG` | `false` | Writes a warning with elapsed time for each enabled regression when set to `true`. This flag does not enable Bug Mode by itself. |
+
+Set these values in `.env` before starting Docker Compose, or pass them directly to the application process. For example, to enable the regression and its log:
+
+```dotenv
+ENABLE_BUG_MODE=true
+BUG_MODE_LOG=true
+```
+
+Restart the application after changing environment variables. If the regression query fails, the exception is logged and the session is rolled back before the request continues without the injected delay; the endpoint's own database operation can still fail normally. Keep Bug Mode disabled in production.
+
 ## Run API Tests
 
 The pytest API suite uses PostgreSQL and refuses to run unless `TEST_DATABASE_URL` points to a database whose name ends in `_test`. It clears the `users` and `tasks` tables between tests, so do not point it at your development database.
@@ -57,3 +77,5 @@ python -m pip install -r backend/requirments.txt
 $env:TEST_DATABASE_URL = "postgresql://buggytasker:buggytasker_dev_password@localhost:5432/buggytasker_test"
 python -m pytest backend/tests -v
 ```
+
+The Bug Mode tests cover flag parsing, the additional query and delay, optional logging, graceful handling of a failed regression query, and preservation of user/task API behavior when the mode is enabled.

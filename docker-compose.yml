@@ -31,6 +31,8 @@ services:
       - "8000:8000"
     environment:
       DATABASE_URL: "postgresql://${POSTGRES_USER:-buggytasker}:${POSTGRES_PASSWORD:-buggytasker_dev_password}@dev-db:5432/${POSTGRES_DB:-buggytasker}"
+      ENABLE_BUG_MODE: ${ENABLE_BUG_MODE:-false}
+      BUG_MODE_LOG: ${BUG_MODE_LOG:-false}
     depends_on:
       dev-db:
         condition: service_healthy

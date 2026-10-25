@@ -6,7 +6,9 @@ import pytest
 
 test_database_url = os.getenv("TEST_DATABASE_URL")
 if not test_database_url:
-    raise pytest.UsageError("Set TEST_DATABASE_URL to a dedicated PostgreSQL database ending in _test")
+    raise pytest.UsageError(
+        "Set TEST_DATABASE_URL to a dedicated PostgreSQL database ending in _test"
+    )
 
 parsed_database_url = urlsplit(test_database_url)
 if not parsed_database_url.scheme.startswith("postgresql"):
@@ -23,13 +25,8 @@ from backend.main import Base, SessionLocal, Task, User, app, engine
 
 
 @pytest.fixture
-def client():
-    with TestClient(app) as test_client:
-        yield test_client
-
-
-@pytest.fixture(autouse=True)
-def clean_database(client):
+def clean_database():
+    """Clean the dedicated test database before and after each test."""
     Base.metadata.create_all(bind=engine)
     with SessionLocal() as db:
         db.execute(delete(Task))
@@ -42,3 +39,9 @@ def clean_database(client):
         db.execute(delete(Task))
         db.execute(delete(User))
         db.commit()
+
+
+@pytest.fixture
+def client(clean_database):
+    with TestClient(app) as test_client:
+        yield test_client
