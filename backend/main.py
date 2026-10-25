@@ -1,12 +1,25 @@
+import logging
 import os
+import time
 from contextlib import asynccontextmanager
 from typing import Iterator
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Response, status
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import Boolean, ForeignKey, Integer, String, Text, create_engine, select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
 
+logger = logging.getLogger(__name__)
+
+
+def _is_enabled(value: str | None) -> bool:
+    return value is not None and value.strip().lower() == "true"
+
+
+BUG_MODE_ENABLED = _is_enabled(os.getenv("ENABLE_BUG_MODE"))
+BUG_MODE_LOG = _is_enabled(os.getenv("BUG_MODE_LOG"))
+BUG_MODE_DELAY_SECONDS = 0.5
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 if not DATABASE_URL or not DATABASE_URL.startswith("postgresql"):
@@ -14,6 +27,25 @@ if not DATABASE_URL or not DATABASE_URL.startswith("postgresql"):
 
 engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
+
+
+def performance_regression_workaround(db: Session) -> None:
+    """Add an extra database round trip and fixed delay when Bug Mode is enabled."""
+    if not BUG_MODE_ENABLED:
+        return
+
+    try:
+        start = time.perf_counter()
+        db.execute(select(1))
+    except SQLAlchemyError:
+        logger.exception("Bug Mode performance regression query failed")
+        db.rollback()
+        return
+
+    time.sleep(BUG_MODE_DELAY_SECONDS)
+    if BUG_MODE_LOG:
+        elapsed_ms = (time.perf_counter() - start) * 1000
+        logger.warning("BUG MODE: added database round trip and %.0f ms delay", elapsed_ms)
 
 
 class Base(DeclarativeBase):
@@ -84,6 +116,7 @@ class TaskRead(BaseModel):
 
 def get_db() -> Iterator[Session]:
     with SessionLocal() as db:
+        performance_regression_workaround(db)
         yield db
 
 
