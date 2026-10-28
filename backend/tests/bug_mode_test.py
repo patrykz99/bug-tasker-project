@@ -165,6 +165,73 @@ class TestBugModeFunctionality:
         assert "Bug Mode performance regression query failed" in caplog.text
 
 
+class TestAuthorizationBugMode:
+    def test_task_endpoints_return_forbidden_when_enabled(
+        self, client, monkeypatch
+    ):
+        monkeypatch.setattr(main, "AUTH_BUG_MODE_ENABLED", False)
+        owner_response = client.post(
+            "/users",
+            json={"username": "auth-mode-owner", "email": "auth-mode@example.com"},
+        )
+        assert owner_response.status_code == 201
+        owner_id = owner_response.json()["id"]
+
+        created_task = client.post(
+            "/tasks", json={"title": "Protected task", "owner_id": owner_id}
+        )
+        assert created_task.status_code == 201
+        task_id = created_task.json()["id"]
+
+        monkeypatch.setattr(main, "AUTH_BUG_MODE_ENABLED", True)
+        requests = [
+            client.get("/tasks"),
+            client.get(f"/tasks/{task_id}"),
+            client.post("/tasks", json={"title": "Blocked task"}),
+            client.patch(f"/tasks/{task_id}", json={"completed": True}),
+            client.delete(f"/tasks/{task_id}"),
+        ]
+
+        for response in requests:
+            assert response.status_code == 403
+            assert response.json() == {
+                "detail": "Access denied (simulated Bug Mode authorization failure)"
+            }
+
+        monkeypatch.setattr(main, "AUTH_BUG_MODE_ENABLED", False)
+        task_after_requests = client.get(f"/tasks/{task_id}")
+        assert task_after_requests.status_code == 200
+        assert task_after_requests.json()["completed"] is False
+        assert len(client.get("/tasks").json()) == 1
+
+    def test_non_task_endpoints_remain_available_when_enabled(
+        self, client, monkeypatch
+    ):
+        monkeypatch.setattr(main, "AUTH_BUG_MODE_ENABLED", True)
+
+        health_response = client.get("/healthz")
+        users_response = client.get("/users")
+
+        assert health_response.status_code == 200
+        assert health_response.json() == {
+            "status": "ok",
+            "database": "connected",
+        }
+        assert users_response.status_code == 200
+        assert client.post(
+            "/users",
+            json={"username": "still-available", "email": "still@example.com"},
+        ).status_code == 201
+
+    def test_task_endpoints_work_when_disabled(self, client, monkeypatch):
+        monkeypatch.setattr(main, "AUTH_BUG_MODE_ENABLED", False)
+
+        response = client.get("/tasks")
+
+        assert response.status_code == 200
+        assert response.json() == []
+
+
 class TestBugModeRaceConditions:
     def test_task_delete_race_condition(self, client, bug_mode_enabled):
         user_response = client.post(

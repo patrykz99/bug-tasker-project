@@ -19,6 +19,7 @@ def _is_enabled(value: str | None) -> bool:
 
 BUG_MODE_ENABLED = _is_enabled(os.getenv("ENABLE_BUG_MODE"))
 BUG_MODE_LOG = _is_enabled(os.getenv("BUG_MODE_LOG"))
+AUTH_BUG_MODE_ENABLED = _is_enabled(os.getenv("ENABLE_AUTH_BUG_MODE"))
 BUG_MODE_DELAY_SECONDS = 0.5
 
 DATABASE_URL = os.getenv("DATABASE_URL")
@@ -46,6 +47,14 @@ def performance_regression_workaround(db: Session) -> None:
     if BUG_MODE_LOG:
         elapsed_ms = (time.perf_counter() - start) * 1000
         logger.warning("BUG MODE: added database round trip and %.0f ms delay", elapsed_ms)
+
+
+def simulate_authorization_bug() -> None:
+    if AUTH_BUG_MODE_ENABLED:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied (simulated Bug Mode authorization failure)",
+        )
 
 
 class Base(DeclarativeBase):
@@ -193,7 +202,12 @@ def delete_user(user_id: int, db: Session = Depends(get_db)) -> Response:
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
-@app.post("/tasks", response_model=TaskRead, status_code=status.HTTP_201_CREATED)
+@app.post(
+    "/tasks",
+    response_model=TaskRead,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(simulate_authorization_bug)],
+)
 def create_task(payload: TaskCreate, db: Session = Depends(get_db)) -> Task:
     ensure_owner_exists(db, payload.owner_id)
     task = Task(**payload.model_dump())
@@ -203,7 +217,11 @@ def create_task(payload: TaskCreate, db: Session = Depends(get_db)) -> Task:
     return task
 
 
-@app.get("/tasks", response_model=list[TaskRead])
+@app.get(
+    "/tasks",
+    response_model=list[TaskRead],
+    dependencies=[Depends(simulate_authorization_bug)],
+)
 def list_tasks(
     offset: int = Query(default=0, ge=0),
     limit: int = Query(default=100, ge=1, le=100),
@@ -216,7 +234,11 @@ def list_tasks(
     return list(db.scalars(query.offset(offset).limit(limit)).all())
 
 
-@app.get("/tasks/{task_id}", response_model=TaskRead)
+@app.get(
+    "/tasks/{task_id}",
+    response_model=TaskRead,
+    dependencies=[Depends(simulate_authorization_bug)],
+)
 def read_task(task_id: int, db: Session = Depends(get_db)) -> Task:
     task = db.get(Task, task_id)
     if task is None:
@@ -224,7 +246,11 @@ def read_task(task_id: int, db: Session = Depends(get_db)) -> Task:
     return task
 
 
-@app.patch("/tasks/{task_id}", response_model=TaskRead)
+@app.patch(
+    "/tasks/{task_id}",
+    response_model=TaskRead,
+    dependencies=[Depends(simulate_authorization_bug)],
+)
 def update_task(task_id: int, payload: TaskUpdate, db: Session = Depends(get_db)) -> Task:
     task = db.get(Task, task_id)
     if task is None:
@@ -239,7 +265,11 @@ def update_task(task_id: int, payload: TaskUpdate, db: Session = Depends(get_db)
     return task
 
 
-@app.delete("/tasks/{task_id}", status_code=status.HTTP_204_NO_CONTENT)
+@app.delete(
+    "/tasks/{task_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(simulate_authorization_bug)],
+)
 def delete_task(task_id: int, db: Session = Depends(get_db)) -> Response:
     task = db.get(Task, task_id)
     if task is None:
