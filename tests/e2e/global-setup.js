@@ -81,8 +81,8 @@ ${server.logs}`);
   );
 }
 
-function startServer(mode, databaseUrl) {
-  const port = portBase + (mode === "enabled" ? 1 : 0);
+function startServer(mode, portOffset, databaseUrl) {
+  const port = portBase + portOffset;
   const child = spawn(
     getPythonExecutable(),
     ["-m", "uvicorn", "main:app", "--host", "127.0.0.1", "--port", String(port)],
@@ -91,8 +91,9 @@ function startServer(mode, databaseUrl) {
       env: {
         ...process.env,
         DATABASE_URL: databaseUrl,
-        ENABLE_BUG_MODE: mode === "enabled" ? "true" : "false",
+        ENABLE_BUG_MODE: mode === "performance-enabled" ? "true" : "false",
         BUG_MODE_LOG: "true",
+        ENABLE_AUTH_BUG_MODE: mode === "authorization-enabled" ? "true" : "false",
       },
       stdio: ["ignore", "pipe", "pipe"],
     }
@@ -143,14 +144,19 @@ async function stopServer(server) {
 
 module.exports = async function globalSetup() {
   const databaseUrl = getTestDatabaseUrl();
-  if (!Number.isInteger(portBase) || portBase < 1 || portBase > 65534) {
-    throw new Error("BUG_MODE_TEST_PORT_BASE must be an integer between 1 and 65534.");
+  if (!Number.isInteger(portBase) || portBase < 1 || portBase > 65533) {
+    throw new Error("BUG_MODE_TEST_PORT_BASE must be an integer between 1 and 65533.");
   }
 
   const servers = [];
   try {
-    for (const mode of ["disabled", "enabled"]) {
-      const server = startServer(mode, databaseUrl);
+    const modes = [
+      "performance-disabled",
+      "performance-enabled",
+      "authorization-enabled",
+    ];
+    for (const [portOffset, mode] of modes.entries()) {
+      const server = startServer(mode, portOffset, databaseUrl);
       servers.push(server);
       await waitForReady(server);
       console.log(`Bug Mode ${mode} API is ready at ${server.url}`);
