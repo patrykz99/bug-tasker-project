@@ -42,14 +42,18 @@ Tasks may optionally be assigned to a user. Deleting an assigned user leaves the
 
 ## Bug Mode
 
-Bug Mode is an opt-in performance-regression simulation for requests that use the database, including health checks and the user and task endpoints. When enabled, each such request performs an additional `SELECT 1` on its existing database session and waits for 500 ms before continuing. This intentionally increases request latency without changing the API response or stored data. It is disabled by default.
+Bug Mode is opt-in and disabled by default. It currently supports two independent simulations:
 
-Configure the feature with these environment variables:
+- **Performance regression:** requests that use the database perform an additional `SELECT 1` on their existing database session and wait for 500 ms before continuing. This increases request latency without changing the API response or stored data.
+- **Security configuration regression:** when disabled, API responses include the `X-Content-Type-Options: nosniff` security header. When enabled, the API omits only this header; response status codes and bodies remain unchanged. This is a safe, deterministic misconfiguration simulation for security-header checks, not an exploit or a substitute for a security assessment.
+
+Configure the modes with these environment variables:
 
 | Variable | Default | Description |
 |---|---|---|
 | `ENABLE_BUG_MODE` | `false` | Enables the extra database query and 500 ms delay when set to `true` (case-insensitive). |
 | `BUG_MODE_LOG` | `false` | Writes a warning with elapsed time for each enabled regression when set to `true`. This flag does not enable Bug Mode by itself. |
+| `ENABLE_SECURITY_BUG_MODE` | `false` | Omits `X-Content-Type-Options: nosniff` when set to `true` (case-insensitive). Independent of the performance mode. |
 
 Set these values in `.env` before starting Docker Compose, or pass them directly to the application process. For example, to enable the regression and its log:
 
@@ -80,20 +84,21 @@ python -m pytest backend/tests -v
 
 The Bug Mode tests cover flag parsing, the additional query and delay, optional logging, graceful handling of a failed regression query, and preservation of user/task API behavior when the mode is enabled.
 
-### Playwright performance-mode API tests
+### Playwright Bug Mode API tests
 
-The Playwright suite starts two local API processes against the dedicated `*_test` database: one with Bug Mode disabled and one enabled. It verifies the response and latency difference, confirms routes without database access are not delayed, and exercises user/task CRUD in both modes. It uses Playwright's API request client and does not require browser installation.
+The Playwright suite starts three local API processes against the dedicated `*_test` database: one with performance Bug Mode disabled, one with performance Bug Mode enabled, and one with Security Bug Mode enabled. `bug-mode-performance.spec.js` verifies the response and latency difference, confirms routes without database access are not delayed, and exercises user/task CRUD in both performance modes. `bug-mode-security.spec.js` checks security-header behavior in safe and simulated-misconfiguration modes. The suite uses Playwright's API request client and does not require browser installation.
 
 #### Run the tests in both modes
 
-You do **not** need to switch `ENABLE_BUG_MODE` in `.env` or recreate the Compose `web` container for this suite. The test setup starts two temporary local API processes and sets their flags independently:
+You do **not** need to switch Bug Mode flags in `.env` or recreate the Compose `web` container for this suite. The test setup starts three temporary local API processes and sets their flags independently:
 
-| Test API | `ENABLE_BUG_MODE` | URL |
-|---|---:|---|
-| Disabled | `false` | `http://127.0.0.1:18100` |
-| Enabled | `true` | `http://127.0.0.1:18101` |
+| Test API | `ENABLE_BUG_MODE` | `ENABLE_SECURITY_BUG_MODE` | URL |
+|---|---:|---:|---|
+| Performance disabled | `false` | `false` | `http://127.0.0.1:18100` |
+| Performance enabled | `true` | `false` | `http://127.0.0.1:18101` |
+| Security enabled | `false` | `true` | `http://127.0.0.1:18102` |
 
-The test suite sends requests to both processes and checks that database-backed requests return the same successful responses, while the enabled process adds at least 400 ms compared with the disabled process. It also checks that `/` (which does not use the database) is not delayed and that user/task CRUD works in both modes. The temporary API processes are stopped after the suite finishes.
+The performance checks compare requests to the first two processes and confirm the enabled process adds at least 400 ms. They also check that `/` (which does not use the database) is not delayed and that user/task CRUD works in both performance modes. Security checks compare the safe and security-enabled processes: every response should keep the same status and body, while the simulated mode omits only `X-Content-Type-Options: nosniff`. The temporary API processes are stopped after the suite finishes.
 
 Before running it:
 
@@ -116,7 +121,7 @@ set "TEST_DATABASE_URL=postgresql://buggytasker:<password>@localhost:5432/buggyt
 npm run test:bug-mode
 ```
 
-Replace `<password>` with the local `POSTGRES_PASSWORD` from `.env`. In CMD, the variable applies only to the current terminal session. The test runner validates that the URL uses PostgreSQL and its database name ends in `_test`, then uses it for both temporary API processes. If the default ports `18100` and `18101` are occupied, set `BUG_MODE_TEST_PORT_BASE` to another available base port. If Python is not at `backend/venv`, set `PYTHON_EXECUTABLE` to the Python executable that has the backend requirements installed. The tests delete the user/task records they create; they do not clear the whole test database.
+Replace `<password>` with the local `POSTGRES_PASSWORD` from `.env`. In CMD, the variable applies only to the current terminal session. The test runner validates that the URL uses PostgreSQL and its database name ends in `_test`, then uses it for all temporary API processes. If the default ports `18100`-`18102` are occupied, set `BUG_MODE_TEST_PORT_BASE` to another available base port. If Python is not at `backend/venv`, set `PYTHON_EXECUTABLE` to the Python executable that has the backend requirements installed. The tests delete the user/task records they create; they do not clear the whole test database.
 
 #### Allure reports
 
