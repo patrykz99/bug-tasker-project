@@ -2,7 +2,7 @@
 
 Project is ceating to showcase modern techniques for API test automation, continerization (Docker), and CI/CD processes.
 
-The main goal of the project is to build a backend application with a dedicated "Bug Mode" for intentionally simulating regressions detected by automated tests. The currently implemented scenario adds database work and latency; authorization and security-vulnerability scenarios are not implemented yet.
+The main goal of the project is to build a backend application with a dedicated "Bug Mode" for intentionally simulating regressions detected by automated tests. The currently implemented scenarios simulate database latency, authorization failures, and a security-header configuration regression.
 
 ---
 
@@ -42,27 +42,35 @@ Tasks may optionally be assigned to a user. Deleting an assigned user leaves the
 
 ## Bug Mode
 
-Bug Mode is opt-in and disabled by default. It currently supports two independent simulations:
+Bug Mode is opt-in and disabled by default. It currently supports three independent simulations:
 
 - **Performance regression:** requests that use the database perform an additional `SELECT 1` on their existing database session and wait for 500 ms before continuing. This increases request latency without changing the API response or stored data.
 - **Security configuration regression:** when disabled, API responses include the `X-Content-Type-Options: nosniff` security header. When enabled, the API omits only this header; response status codes and bodies remain unchanged. This is a safe, deterministic misconfiguration simulation for security-header checks, not an exploit or a substitute for a security assessment.
+- **Authorization failure:** all `/tasks` endpoints return `403 Forbidden` with a simulated authorization error. The `/healthz` and `/users` endpoints remain available. This is a deterministic failure simulation, not real authentication or authorization.
 
 Configure the modes with these environment variables:
 
 | Variable | Default | Description |
 |---|---|---|
 | `ENABLE_BUG_MODE` | `false` | Enables the extra database query and 500 ms delay when set to `true` (case-insensitive). |
-| `BUG_MODE_LOG` | `false` | Writes a warning with elapsed time for each enabled regression when set to `true`. This flag does not enable Bug Mode by itself. |
-| `ENABLE_SECURITY_BUG_MODE` | `false` | Omits `X-Content-Type-Options: nosniff` when set to `true` (case-insensitive). Independent of the performance mode. |
+| `BUG_MODE_LOG` | `false` | Writes a warning with elapsed time for each performance regression when set to `true`. This flag does not enable Bug Mode by itself. |
+| `ENABLE_SECURITY_BUG_MODE` | `false` | Omits `X-Content-Type-Options: nosniff` when set to `true` (case-insensitive). Independent of the other modes. |
+| `ENABLE_AUTH_BUG_MODE` | `false` | Makes all `/tasks` endpoints return the simulated `403 Forbidden` response when set to `true` (case-insensitive). Independent of the performance mode. |
 
-Set these values in `.env` before starting Docker Compose, or pass them directly to the application process. For example, to enable the regression and its log:
+Set these values in `.env` before starting Docker Compose, or pass them directly to the application process. For example, to enable the performance regression and its log:
 
 ```dotenv
 ENABLE_BUG_MODE=true
 BUG_MODE_LOG=true
 ```
 
-Restart the application after changing environment variables. If the regression query fails, the exception is logged and the session is rolled back before the request continues without the injected delay; the endpoint's own database operation can still fail normally. Keep Bug Mode disabled in production.
+To simulate an authorization failure for task requests instead:
+
+```dotenv
+ENABLE_AUTH_BUG_MODE=true
+```
+
+The performance, security, and authorization modes can be enabled independently or together. Restart the application after changing environment variables. If the performance regression query fails, the exception is logged and the session is rolled back before the request continues without the injected delay; the endpoint's own database operation can still fail normally. Keep all Bug Modes disabled in production.
 
 ## Run API Tests
 
@@ -86,19 +94,20 @@ The Bug Mode tests cover flag parsing, the additional query and delay, optional 
 
 ### Playwright Bug Mode API tests
 
-The Playwright suite starts three local API processes against the dedicated `*_test` database: one with performance Bug Mode disabled, one with performance Bug Mode enabled, and one with Security Bug Mode enabled. `bug-mode-performance.spec.js` verifies the response and latency difference, confirms routes without database access are not delayed, and exercises user/task CRUD in both performance modes. `bug-mode-security.spec.js` checks security-header behavior in safe and simulated-misconfiguration modes. The suite uses Playwright's API request client and does not require browser installation.
+The Playwright suite starts four local API processes against the dedicated `*_test` database: one with performance Bug Mode disabled, one with performance Bug Mode enabled, one with Security Bug Mode enabled, and one with authorization Bug Mode enabled. `bug-mode-performance.spec.js` verifies the response and latency difference, confirms routes without database access are not delayed, exercises user/task CRUD in both performance modes, and checks authorization behavior. `bug-mode-security.spec.js` checks security-header behavior in safe and simulated-misconfiguration modes. The suite uses Playwright's API request client and does not require browser installation.
 
-#### Run the tests in both modes
+#### Run the test suite
 
-You do **not** need to switch Bug Mode flags in `.env` or recreate the Compose `web` container for this suite. The test setup starts three temporary local API processes and sets their flags independently:
+You do **not** need to switch Bug Mode flags in `.env` or recreate the Compose `web` container for this suite. The test setup starts four temporary local API processes and sets their flags independently:
 
-| Test API | `ENABLE_BUG_MODE` | `ENABLE_SECURITY_BUG_MODE` | URL |
-|---|---:|---:|---|
-| Performance disabled | `false` | `false` | `http://127.0.0.1:18100` |
-| Performance enabled | `true` | `false` | `http://127.0.0.1:18101` |
-| Security enabled | `false` | `true` | `http://127.0.0.1:18102` |
+| Test API | `ENABLE_BUG_MODE` | `ENABLE_SECURITY_BUG_MODE` | `ENABLE_AUTH_BUG_MODE` | URL |
+|---|---:|---:|---:|---|
+| Performance disabled | `false` | `false` | `false` | `http://127.0.0.1:18100` |
+| Performance enabled | `true` | `false` | `false` | `http://127.0.0.1:18101` |
+| Security enabled | `false` | `true` | `false` | `http://127.0.0.1:18102` |
+| Authorization enabled | `false` | `false` | `true` | `http://127.0.0.1:18103` |
 
-The performance checks compare requests to the first two processes and confirm the enabled process adds at least 400 ms. They also check that `/` (which does not use the database) is not delayed and that user/task CRUD works in both performance modes. Security checks compare the safe and security-enabled processes: every response should keep the same status and body, while the simulated mode omits only `X-Content-Type-Options: nosniff`. The temporary API processes are stopped after the suite finishes.
+The performance checks compare requests to the first two processes and confirm the enabled process adds at least 400 ms. They also check that `/` (which does not use the database) is not delayed and that user/task CRUD works in both performance modes. Security checks compare the safe and security-enabled processes, preserving response status and body while omitting only the security header in simulated mode. Authorization tests verify task endpoints return the simulated `403` only on the authorization-enabled process, while `/healthz` and `/users` remain available, and confirm denied requests do not modify stored tasks. The temporary API processes are stopped after the suite finishes.
 
 Before running it:
 
@@ -121,7 +130,7 @@ set "TEST_DATABASE_URL=postgresql://buggytasker:<password>@localhost:5432/buggyt
 npm run test:bug-mode
 ```
 
-Replace `<password>` with the local `POSTGRES_PASSWORD` from `.env`. In CMD, the variable applies only to the current terminal session. The test runner validates that the URL uses PostgreSQL and its database name ends in `_test`, then uses it for all temporary API processes. If the default ports `18100`-`18102` are occupied, set `BUG_MODE_TEST_PORT_BASE` to another available base port. If Python is not at `backend/venv`, set `PYTHON_EXECUTABLE` to the Python executable that has the backend requirements installed. The tests delete the user/task records they create; they do not clear the whole test database.
+Replace `<password>` with the local `POSTGRES_PASSWORD` from `.env`. In CMD, the variable applies only to the current terminal session. The test runner validates that the URL uses PostgreSQL and its database name ends in `_test`, then uses it for all temporary API processes. If the default ports `18100`-`18103` are occupied, set `BUG_MODE_TEST_PORT_BASE` to another available base port. If Python is not at `backend/venv`, set `PYTHON_EXECUTABLE` to the Python executable that has the backend requirements installed. The tests delete the user/task records they create; they do not clear the whole test database.
 
 #### Allure reports
 
@@ -136,8 +145,7 @@ The generated report is in `allure-report/`; `report:allure:open` opens it in a 
 
 ## TO_DO
 
-- [ ] Add Bug Mode scenarios for authorization failures, with explicit opt-in configuration and safe defaults.
-- [ ] Add Bug Mode security-vulnerability scenarios, isolated to a local/test environment and disabled by default.
-- [ ] Add automated tests for the authorization Bug Mode scenarios, including enabled and disabled behavior.
-- [ ] Add automated tests for the security Bug Mode scenarios, including enabled and disabled behavior and verification that the normal application path remains unaffected.
-- [ ] Set up CI with GitHub Actions to run the Python test suite and Playwright performance tests on pushes and pull requests. Provision PostgreSQL and the dedicated test database in CI, configure test-only credentials, and report test failures clearly.
+- [✅] Add Bug Mode scenarios for authorization failures, with explicit opt-in configuration and safe defaults.
+- [✅] Add a Security Bug Mode header-regression simulation, disabled by default, with Pytest and Playwright coverage.
+- [✅] Add automated tests for the authorization and security Bug Mode scenarios, including enabled and disabled behavior.
+- [ ] Set up CI with GitHub Actions to run the Python test suite and Playwright Bug Mode tests on pushes and pull requests. Provision PostgreSQL and the dedicated test database in CI, configure test-only credentials, and report test failures clearly.
