@@ -94,7 +94,7 @@ The Bug Mode tests cover flag parsing, the additional query and delay, optional 
 
 ### Playwright Bug Mode API tests
 
-The Playwright suite starts four local API processes against the dedicated `*_test` database: one with performance Bug Mode disabled, one with performance Bug Mode enabled, one with Security Bug Mode enabled, and one with authorization Bug Mode enabled. `bug-mode-performance.spec.js` verifies the response and latency difference, confirms routes without database access are not delayed, exercises user/task CRUD in both performance modes, and checks authorization behavior. `bug-mode-security.spec.js` checks security-header behavior in safe and simulated-misconfiguration modes. The suite uses Playwright's API request client and does not require browser installation.
+The Playwright suite starts four local API processes against the dedicated `*_test` database: one with performance Bug Mode disabled, one with performance Bug Mode enabled, one with Security Bug Mode enabled, and one with authorization Bug Mode enabled. `bug-mode-performance.spec.js` verifies the response and latency difference, confirms routes without database access are not delayed, and exercises user/task CRUD in both performance modes. `bug-mode-authorization.spec.js` checks task access and verifies health/user endpoints remain available in authorization mode. `bug-mode-security.spec.js` checks security-header behavior in safe and simulated-misconfiguration modes. The suite uses Playwright's API request client and does not require browser installation.
 
 #### Run the test suite
 
