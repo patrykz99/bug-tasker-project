@@ -4,7 +4,7 @@ import time
 from contextlib import asynccontextmanager
 from typing import Iterator
 
-from fastapi import Depends, FastAPI, HTTPException, Query, Response, status
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response, status
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import Boolean, ForeignKey, Integer, String, Text, create_engine, select
 from sqlalchemy.exc import SQLAlchemyError
@@ -19,6 +19,7 @@ def _is_enabled(value: str | None) -> bool:
 
 BUG_MODE_ENABLED = _is_enabled(os.getenv("ENABLE_BUG_MODE"))
 BUG_MODE_LOG = _is_enabled(os.getenv("BUG_MODE_LOG"))
+SECURITY_BUG_MODE_ENABLED = _is_enabled(os.getenv("ENABLE_SECURITY_BUG_MODE"))
 AUTH_BUG_MODE_ENABLED = _is_enabled(os.getenv("ENABLE_AUTH_BUG_MODE"))
 BUG_MODE_DELAY_SECONDS = 0.5
 
@@ -141,6 +142,14 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(title="Buggy Tasker API", version="0.1.0", lifespan=lifespan)
+
+
+@app.middleware("http")
+async def apply_security_headers(request: Request, call_next):
+    response = await call_next(request)
+    if not SECURITY_BUG_MODE_ENABLED:
+        response.headers["X-Content-Type-Options"] = "nosniff"
+    return response
 
 
 @app.get("/")

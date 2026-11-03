@@ -1,6 +1,9 @@
+import asyncio
 import logging
 
 import pytest
+from starlette.requests import Request
+from starlette.responses import Response
 from sqlalchemy.exc import SQLAlchemyError
 
 from backend import main
@@ -163,6 +166,71 @@ class TestBugModeFunctionality:
 
         assert session.rolled_back
         assert "Bug Mode performance regression query failed" in caplog.text
+
+
+class TestSecurityBugMode:
+    def test_security_header_is_added_when_security_mode_is_disabled(
+        self, monkeypatch
+    ):
+        monkeypatch.setattr(main, "SECURITY_BUG_MODE_ENABLED", False)
+
+        async def call_next(_request):
+            return Response(content="unchanged", status_code=200)
+
+        response = asyncio.run(
+            main.apply_security_headers(
+                Request({"type": "http", "method": "GET", "path": "/", "headers": []}),
+                call_next,
+            )
+        )
+
+        assert response.status_code == 200
+        assert response.body == b"unchanged"
+        assert response.headers["x-content-type-options"] == "nosniff"
+
+    def test_security_mode_only_omits_header_when_enabled(self, monkeypatch):
+        monkeypatch.setattr(main, "SECURITY_BUG_MODE_ENABLED", True)
+
+        async def call_next(_request):
+            return Response(content="unchanged", status_code=200)
+
+        response = asyncio.run(
+            main.apply_security_headers(
+                Request({"type": "http", "method": "GET", "path": "/", "headers": []}),
+                call_next,
+            )
+        )
+
+        assert response.status_code == 200
+        assert response.body == b"unchanged"
+        assert "x-content-type-options" not in response.headers
+
+    @pytest.mark.parametrize(
+        "path",
+        ["/", "/healthz", "/users", "/tasks", "/missing"],
+    )
+    def test_security_header_is_present_when_mode_is_disabled(
+        self, client, monkeypatch, path
+    ):
+        monkeypatch.setattr(main, "SECURITY_BUG_MODE_ENABLED", False)
+
+        response = client.get(path)
+
+        assert response.headers["x-content-type-options"] == "nosniff"
+
+    @pytest.mark.parametrize("path", ["/", "/healthz", "/users", "/tasks"])
+    def test_security_mode_only_removes_header_and_preserves_response(
+        self, client, monkeypatch, path
+    ):
+        monkeypatch.setattr(main, "SECURITY_BUG_MODE_ENABLED", False)
+        safe_response = client.get(path)
+        monkeypatch.setattr(main, "SECURITY_BUG_MODE_ENABLED", True)
+
+        simulated_response = client.get(path)
+
+        assert simulated_response.status_code == safe_response.status_code
+        assert simulated_response.content == safe_response.content
+        assert "x-content-type-options" not in simulated_response.headers
 
 
 class TestAuthorizationBugMode:

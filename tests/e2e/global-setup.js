@@ -93,6 +93,7 @@ function startServer(mode, portOffset, databaseUrl) {
         DATABASE_URL: databaseUrl,
         ENABLE_BUG_MODE: mode === "performance-enabled" ? "true" : "false",
         BUG_MODE_LOG: "true",
+        ENABLE_SECURITY_BUG_MODE: mode === "security-enabled" ? "true" : "false",
         ENABLE_AUTH_BUG_MODE: mode === "authorization-enabled" ? "true" : "false",
       },
       stdio: ["ignore", "pipe", "pipe"],
@@ -144,8 +145,8 @@ async function stopServer(server) {
 
 module.exports = async function globalSetup() {
   const databaseUrl = getTestDatabaseUrl();
-  if (!Number.isInteger(portBase) || portBase < 1 || portBase > 65533) {
-    throw new Error("BUG_MODE_TEST_PORT_BASE must be an integer between 1 and 65533.");
+  if (!Number.isInteger(portBase) || portBase < 1 || portBase > 65532) {
+    throw new Error("BUG_MODE_TEST_PORT_BASE must be an integer between 1 and 65532.");
   }
 
   const servers = [];
@@ -153,6 +154,7 @@ module.exports = async function globalSetup() {
     const modes = [
       "performance-disabled",
       "performance-enabled",
+      "security-enabled",
       "authorization-enabled",
     ];
     for (const [portOffset, mode] of modes.entries()) {

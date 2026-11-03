@@ -3,7 +3,7 @@ const { test, expect } = require("@playwright/test");
 const portBase = Number(process.env.BUG_MODE_TEST_PORT_BASE || 18100);
 const disabledApi = `http://127.0.0.1:${portBase}`;
 const enabledApi = `http://127.0.0.1:${portBase + 1}`;
-const authorizationEnabledApi = `http://127.0.0.1:${portBase + 2}`;
+const authorizationEnabledApi = `http://127.0.0.1:${portBase + 3}`;
 const delayThresholdMs = 400;
 
 async function measureRequest(apiRequest, url) {
